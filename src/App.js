@@ -2,32 +2,94 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import styled from "styled-components";
 import { ParafinWidget } from "@parafin/react";
+import { openParafinDashboard } from "@parafin/core";
 import { Header } from "./components/Header.tsx";
 import { SideNav } from "./components/SideNav.tsx";
+import config from "./config";
 
 function App() {
   const [token, setToken] = useState(null);
+  const [bnplToken, setBnplToken] = useState(null);
+  const [bnplLoading, setBnplLoading] = useState(false);
+  const [bnplError, setBnplError] = useState(null);
+  const [orderToken, setOrderToken] = useState(null);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderError, setOrderError] = useState(null);
   const [tab, setTab] = useState("capital");
 
   useEffect(() => {
-    // Change to false to use production or sandbox production environment
-    const isDevEnvironment = true;
-
     const fetchToken = async () => {
-      // Replace with your own Person ID. It should begin with "person_".
-      const personId = "<your-person-id>";
-
-      // Fetch Parafin token from server
       const response = await axios.get(
-        `/parafin/token/${personId}/${isDevEnvironment}`
+        `/parafin/token/capital/${config.capital.personId}/${config.isDev}`
       );
       setToken(response.data.parafinToken);
     };
 
-    if (!token) {
-      fetchToken();
+    fetchToken();
+  }, []);
+
+  const handlePayOverTimeClick = async () => {
+    setTab("payovertime");
+    if (bnplToken) return;
+    setBnplLoading(true);
+    setBnplError(null);
+    try {
+      const response = await axios.get(
+        `/parafin/token/payovertime/${config.payOverTime.personId}/${config.isDev}`
+      );
+      if (response.data.errorCode) {
+        setBnplError(`Error ${response.data.errorCode}: Failed to fetch Pay Over Time token.`);
+        return;
+      }
+      setBnplToken(response.data.parafinToken);
+    } catch (err) {
+      setBnplError("Failed to fetch Pay Over Time token.");
+    } finally {
+      setBnplLoading(false);
     }
-  });
+  };
+
+  const handleCheckoutClick = async () => {
+    setTab("checkout");
+    if (orderToken) {
+      openParafinDashboard({
+        product: "bnpl",
+        token: orderToken,
+        orderId: config.checkout.orderId,
+        onExit: (orderId) => {
+          console.log("Checkout exited for orderId:", orderId);
+          setOrderLoading(false);
+        },
+      });
+      return;
+    }
+    setOrderLoading(true);
+    setOrderError(null);
+    try {
+      const response = await axios.get(
+        `/parafin/token/checkout/${config.checkout.personId}/${config.isDev}`
+      );
+      if (response.data.errorCode) {
+        setOrderError(`Error ${response.data.errorCode}: Failed to fetch Checkout token.`);
+        return;
+      }
+      const token = response.data.parafinToken;
+      setOrderToken(token);
+      openParafinDashboard({
+        product: "bnpl",
+        token,
+        orderId: config.checkout.orderId,
+        onExit: (orderId) => {
+          console.log("Checkout exited for orderId:", orderId);
+          setOrderLoading(false);
+        },
+      });
+    } catch (err) {
+      setOrderError("Failed to launch Checkout flow.");
+    } finally {
+      setOrderLoading(false);
+    }
+  };
 
   const onOptIn = async () => ({
     businessExternalId: "<your-external-business-id>",
@@ -63,7 +125,19 @@ function App() {
     <div>
       <Header />
       <ContentShell>
-        <SideNav onClick={(newProduct) => setTab(newProduct)} />
+        <SideNav
+          onClick={(newProduct) => {
+            if (newProduct === "payovertime") {
+              handlePayOverTimeClick();
+            } else if (newProduct === "checkout") {
+              handleCheckoutClick();
+            } else {
+              setTab(newProduct);
+            }
+          }}
+          bnplLoading={bnplLoading}
+          orderLoading={orderLoading}
+        />
         {tab === "capital" && (
           <PageShell>
             <ParafinWidget
@@ -75,14 +149,29 @@ function App() {
             />
           </PageShell>
         )}
-        {tab === "analytics" && (
+        {tab === "payovertime" && (
           <PageShell>
-            <h2>Analytics</h2>
+            {bnplLoading && <ErrorText style={{color: "#555"}}>Loading Pay Over Time...</ErrorText>}
+            {bnplError && <ErrorText>{bnplError}</ErrorText>}
+            {!bnplLoading && !bnplError && bnplToken && (
+              <ParafinWidget
+                token={bnplToken}
+                product="line_of_credit"
+                lineOfCreditApplicationId={config.payOverTime.lineOfCreditApplicationId}
+                onExit={() => {}}
+              />
+            )}
           </PageShell>
         )}
-        {tab === "payouts" && (
+        {tab === "checkout" && (
           <PageShell>
-            <h2>Payouts</h2>
+            {orderLoading && <ErrorText style={{color: "#555"}}>Loading Checkout...</ErrorText>}
+            {orderError && <ErrorText>{orderError}</ErrorText>}
+            {!orderLoading && !orderError && !orderToken && (
+              <ErrorText style={{color: "#555"}}>
+                Configure checkout.personId and checkout.orderId in src/config.js and BNPL credentials in .env to use Checkout.
+              </ErrorText>
+            )}
           </PageShell>
         )}
       </ContentShell>
@@ -108,4 +197,9 @@ const PageShell = styled.div`
   padding: 20px;
   gap: 40px;
   max-width: 1100px;
+`;
+
+const ErrorText = styled.p`
+  color: #c0392b;
+  padding: 16px;
 `;

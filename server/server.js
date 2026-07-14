@@ -1,15 +1,13 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const session = require("express-session");
-const app = express();
 const axios = require("axios");
 require("dotenv").config();
 
-// middleware
+const app = express();
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-
-// session
 app.use(
   session({
     secret: "keyboard cat",
@@ -21,44 +19,56 @@ app.use(
 const PARAFIN_BASE_URL = "https://api.parafin.com/v1";
 const PARAFIN_DEV_BASE_URL = "https://api.dev.parafin.com/v1";
 
-// route for fetching Parafin token
-app.get("/parafin/token/:id/:isDev?", async (req, res) => {
-  const personId = req.params.id;
-  const isDev = req.params.isDev;
-  const url = `${
-    isDev === "true" ? PARAFIN_DEV_BASE_URL : PARAFIN_BASE_URL
-  }/auth/redeem_token`;
-  console.log(personId);
+// Credentials keyed by product.
+// "capital"     → PARAFIN_CLIENT_ID / PARAFIN_CLIENT_SECRET
+// "payovertime" → BNPL_CLIENT_ID    / BNPL_CLIENT_SECRET
+// "checkout"    → BNPL_CLIENT_ID    / BNPL_CLIENT_SECRET  (shared with Pay Over Time)
+const PRODUCT_CREDENTIALS = {
+  capital: {
+    username: () => process.env.PARAFIN_CLIENT_ID,
+    password: () => process.env.PARAFIN_CLIENT_SECRET,
+  },
+  payovertime: {
+    username: () => process.env.BNPL_CLIENT_ID,
+    password: () => process.env.BNPL_CLIENT_SECRET,
+  },
+  checkout: {
+    username: () => process.env.BNPL_CLIENT_ID,
+    password: () => process.env.BNPL_CLIENT_SECRET,
+  },
+};
 
-  const data = {
-    person_id: personId,
-  };
+// Single token endpoint used by all three product flows.
+// :product  — one of "capital" | "payovertime" | "checkout"
+// :id       — person_id
+// :isDev    — "true" to hit api.dev.parafin.com, omit / "false" for api.parafin.com
+app.get("/parafin/token/:product/:id/:isDev?", async (req, res) => {
+  const { product, id: personId, isDev } = req.params;
 
-  const config = {
-    auth: {
-      username: process.env.PARAFIN_CLIENT_ID,
-      password: process.env.PARAFIN_CLIENT_SECRET,
-    },
-  };
+  const credentials = PRODUCT_CREDENTIALS[product];
+  if (!credentials) {
+    return res.status(400).send({ error: `Unknown product: "${product}". Valid values: capital, payovertime, checkout.` });
+  }
+
+  const baseUrl = isDev === "true" ? PARAFIN_DEV_BASE_URL : PARAFIN_BASE_URL;
+  console.log(`[${product}] token request for person: ${personId}`);
 
   try {
-    // make call to fetch Parafin token for business
-    const result = await axios.post(url, data, config);
-    const parafinToken = result.data.bearer_token;
-
-    res.send({
-      parafinToken: parafinToken,
-    });
+    const result = await axios.post(
+      `${baseUrl}/auth/redeem_token`,
+      { person_id: personId },
+      { auth: { username: credentials.username(), password: credentials.password() } }
+    );
+    res.send({ parafinToken: result.data.bearer_token });
   } catch (error) {
-    console.log(error.response.data);
+    console.error(`[${product}] token error:`, error.response?.data);
     res.send({
-      errorCode: error.response.status,
-      message: error.response.data,
+      errorCode: error.response?.status,
+      message: error.response?.data,
     });
   }
 });
 
-// Starting Server
 app.listen(process.env.PORT || 8080, () => {
-  console.log(`App listening on PORT: ${process.env.PORT || 8080}`);
+  console.log(`Server listening on port ${process.env.PORT || 8080}`);
 });

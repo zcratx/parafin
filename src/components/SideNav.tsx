@@ -2,18 +2,26 @@ import React from "react";
 import styled from "styled-components";
 import { partnerColor, partnerColorAlpha } from "./Header.tsx";
 
-export const SideNav = ({ onClick }) => {
+export const SideNav = ({
+  onClick,
+  bnplLoading,
+  orderLoading,
+}: {
+  onClick: (product: string) => void;
+  bnplLoading?: boolean;
+  orderLoading?: boolean;
+}) => {
   return (
     <SideNavShell>
       <StyledSideNav>
         <StyledNavItem onClick={() => onClick("capital")}>
           Capital
         </StyledNavItem>
-        <StyledNavItem onClick={() => onClick("analytics")}>
-          Analytics
+        <StyledNavItem onClick={() => !bnplLoading && onClick("payovertime")} $disabled={bnplLoading}>
+          {bnplLoading ? "Loading..." : "Pay Over Time - Line of Credit"}
         </StyledNavItem>
-        <StyledNavItem onClick={() => onClick("payouts")}>
-          Payouts
+        <StyledNavItem onClick={() => !orderLoading && onClick("checkout")} $disabled={orderLoading}>
+          {orderLoading ? "Loading..." : "Pay Over Time - Checkout"}
         </StyledNavItem>
       </StyledSideNav>
     </SideNavShell>
@@ -33,12 +41,18 @@ const StyledSideNav = styled.nav`
   gap: 20px;
 `;
 
-const StyledNavItem = styled.div`
+const StyledNavItem = styled.div<{ $accent?: boolean; $disabled?: boolean }>`
   display: flex;
-  color: ${partnerColor};
-  background-color: ${partnerColorAlpha};
+  color: ${({ $accent }) => ($accent ? "#fff" : partnerColor)};
+  background-color: ${({ $accent, $disabled }) =>
+    $disabled ? "#aaa" : $accent ? partnerColor : partnerColorAlpha};
   padding: 8px 16px;
   border-radius: 4px;
   justify-content: center;
-  cursor: pointer;
+  cursor: ${({ $disabled }) => ($disabled ? "not-allowed" : "pointer")};
+  font-weight: ${({ $accent }) => ($accent ? "600" : "normal")};
+  opacity: ${({ $disabled }) => ($disabled ? "0.7" : "1")};
+  &:hover {
+    opacity: ${({ $disabled }) => ($disabled ? "0.7" : "0.85")};
+  }
 `;
