@@ -1,139 +1,111 @@
-# Parafin Embedded Demo
+# GrubDash × Parafin Embedded Capital Demo
 
-A quickstart app showing how to integrate Parafin's embedded widgets and flows into a React application. Three product flows are included:
+A take-home demo that embeds the real Parafin Capital widget in a restaurant dashboard and presents four stable Flex Loan states:
 
-| Product | Component | Description |
-|---------|-----------|-------------|
-| **Capital** | `ParafinWidget` (`product="capital"`) | Embedded capital offer widget |
-| **Pay Over Time** | `ParafinWidget` (`product="line_of_credit"`) | Embedded line-of-credit / BNPL widget |
-| **Order Checkout** | `openParafinDashboard` | Full-screen BNPL checkout modal triggered by an order ID |
+1. No offers available
+2. Pre-approved offer available
+3. Capital on its way
+4. Offer accepted with an outstanding balance
 
-![Parafin Widget preview](/img/elements-preview.gif)
+The right-hand runbook updates with each state so the recording shows the exact sandbox API call or UI action that produced it.
 
-## Prerequisites
+## Architecture
 
-- Access to a [Parafin dashboard](https://dashboard.parafin.com)
-- [Node.js](https://nodejs.org/en/) v16+
+The React client never receives the Parafin client secret. It requests a short-lived token for one of four allow-listed demo personas from the local Express server:
 
----
+```text
+Browser → POST /api/parafin/token/:state
+              ↓
+Express → POST https://api.parafin.com/v1/auth/redeem_token
+              ↓
+bearer_token → <ParafinWidget product="capital" />
+```
 
-## Quick Start
-
-### 1. Clone and install
+## Local setup
 
 ```bash
-git clone https://github.com/buildparafin/embedded-demo.git
-cd embedded-demo
 npm install
-```
-
-### 2. Set up credentials
-
-Copy `sample.env` to `.env` and fill in your sandbox API keys from [Settings → API keys](https://dashboard.parafin.com/settings/api-keys):
-
-```bash
 cp sample.env .env
-```
-
-```bash
-# Capital product credentials
-PARAFIN_CLIENT_ID="<your-capital-client-id>"
-PARAFIN_CLIENT_SECRET="<your-capital-client-secret>"
-
-# Pay Over Time + Order Checkout credentials
-BNPL_CLIENT_ID="<your-bnpl-client-id>"
-BNPL_CLIENT_SECRET="<your-bnpl-client-secret>"
-```
-
-### 3. Configure sandbox IDs
-
-**All sandbox IDs live in one file: [`src/config.js`](src/config.js)**. Open it and replace the placeholder values with your own:
-
-```js
-const config = {
-  capital: {
-    personId: "person_xxx",          // person_id for the Capital widget
-  },
-  payOverTime: {
-    personId: "person_xxx",          // person_id for the Pay Over Time widget
-    lineOfCreditApplicationId: "line_of_credit_application_xxx",
-  },
-  checkout: {
-    personId: "person_xxx",          // person_id for Order Checkout (can share with payOverTime)
-    orderId: "order_xxx",            // order_id to test the checkout flow
-  },
-  isDev: false,                      // true → api.dev.parafin.com, false → api.parafin.com
-};
-```
-
-See the sections below for how to create each required resource in the sandbox.
-
-### 4. Run the app
-
-```bash
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
----
+Fill `.env` with the sandbox Client ID and Client secret from the Parafin dashboard, plus four `person_xxx` IDs. Each person must be linked to the sandbox business representing that state.
 
-## Product Setup
+## Preparing the four personas
 
-### Capital
+Use separate businesses so every state remains stable while recording. All API calls use HTTP Basic authentication with `PARAFIN_CLIENT_ID:PARAFIN_CLIENT_SECRET` and target `https://api.parafin.com`.
 
-1. Create a [Business](https://docs.parafin.com/capital/share-data/methods/api#2-create-a-business), [Person](https://docs.parafin.com/capital/share-data/methods/api#3-create-a-person), and [Bank Account](https://docs.parafin.com/capital/share-data/methods/api#4-create-a-bank-account) in the sandbox.
-2. [Generate a Capital Product Offer](https://docs.parafin.com/api#tag/Sandbox/operation/Generate%20Capital%20Product%20Offer) for the business.
-3. Set `config.capital.personId` in `src/config.js` to your `person_xxx` ID.
-4. Set `PARAFIN_CLIENT_ID` / `PARAFIN_CLIENT_SECRET` in `.env`.
+### 1. No offer
 
-### Pay Over Time (Line of Credit)
+Use a newly created business with no active offer. If an offer already exists, close it:
 
-1. Create a Business, Person, and Bank Account under your BNPL partner credentials.
-2. Create a Line of Credit Application for the business.
-3. Set `config.payOverTime.personId` and `config.payOverTime.lineOfCreditApplicationId` in `src/config.js`.
-4. Set `BNPL_CLIENT_ID` / `BNPL_CLIENT_SECRET` in `.env`.
-
-### Order Checkout
-
-1. Create an order in the sandbox using your BNPL partner credentials.
-2. Set `config.checkout.orderId` to the `order_xxx` ID in `src/config.js`.
-3. Set `config.checkout.personId` — this can be the same as `payOverTime.personId` if using shared credentials.
-4. `BNPL_CLIENT_ID` / `BNPL_CLIENT_SECRET` are reused from Pay Over Time (no extra `.env` changes needed).
-
----
-
-## Project Structure
-
-```
-embedded-demo/
-├── src/
-│   ├── config.js          # ← Edit this to configure sandbox IDs
-│   ├── App.js             # Main React component
-│   └── components/
-│       ├── Header.tsx
-│       └── SideNav.tsx
-├── server/
-│   └── server.js          # Express server — token exchange proxy
-├── sample.env             # Copy to .env and fill in credentials
-└── package.json
+```bash
+curl --request POST \
+  --url https://api.parafin.com/v1/sandbox/capital_product_offers/<offer_id>/close \
+  --user "$PARAFIN_CLIENT_ID:$PARAFIN_CLIENT_SECRET"
 ```
 
-## Architecture
+Set its person ID as `PARAFIN_NO_OFFER_PERSON_ID`.
 
-The demo uses a lightweight Express proxy server (`server/server.js`) to exchange your `client_id`/`client_secret` for a short-lived Parafin bearer token — **credentials never touch the browser**. The React frontend calls `/parafin/token/:product/:personId` to fetch a token, then passes it directly to the Parafin SDK.
+### 2. Pre-approved Flex Loan
 
+Generate a sandbox Flex Loan offer:
+
+```bash
+curl --request POST \
+  --url https://api.parafin.com/v1/sandbox/capital_product_offers \
+  --user "$PARAFIN_CLIENT_ID:$PARAFIN_CLIENT_SECRET" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "product_type": "flex_loan",
+    "is_top_up": false,
+    "business_external_id": "<restaurant_external_id>",
+    "max_offer_amount": 50000,
+    "campaign_type": "pre_approved"
+  }'
 ```
-Browser → POST /parafin/token/:product/:id
-            ↓
-        Express (server.js)
-            ↓
-        POST api.parafin.com/v1/auth/redeem_token  (with client credentials)
-            ↓
-        bearer_token → Browser → ParafinWidget / openParafinDashboard
+
+`max_offer_amount` must be greater than 5,000 and a multiple of 100. Set the linked person ID as `PARAFIN_PREAPPROVED_PERSON_ID`.
+
+### 3. Capital on its way
+
+Create another Flex Loan offer, open that persona in the embedded widget, and complete the hosted acceptance flow. Do not call the funding endpoint yet. Set the person ID as `PARAFIN_ON_ITS_WAY_PERSON_ID`.
+
+For the full acceptance flow, Parafin recommends including a bank account with a real routing number such as `021000021` so manual bank verification succeeds in sandbox.
+
+### 4. Outstanding balance
+
+Create and accept an offer for the fourth business, then fund its capital product:
+
+```bash
+curl --request POST \
+  --url https://api.parafin.com/v1/sandbox/fund_capital_product \
+  --user "$PARAFIN_CLIENT_ID:$PARAFIN_CLIENT_SECRET" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "business_parafin_id": "<business_id>",
+    "settlement_status": "completed"
+  }'
 ```
 
-## Docs
+Set the linked person ID as `PARAFIN_OUTSTANDING_PERSON_ID`.
 
-- [Parafin Documentation](https://docs.parafin.com)
-- [`@parafin/react` reference](https://docs.parafin.com/capital/present-offers/embedded/reference)
+## Recording outline
+
+1. Start on **No offer** and explain that the widget derives state from the authenticated person/business.
+2. Move to **Pre-approved** and point to the create-offer call and `product_type: flex_loan`.
+3. Move to **On its way** and explain that completing acceptance in the hosted widget produces this state.
+4. Move to **Outstanding** and highlight the sandbox funding call.
+5. Close by noting that the only client-side integration is `ParafinWidget`; token redemption and credentials stay server-side.
+
+The four buttons are intentionally deterministic and recording-friendly: switching states redeems a fresh short-lived token for the corresponding person and remounts the widget.
+
+## Relevant Parafin docs
+
+- [Capital overview](https://docs.parafin.com/products/capital/overview)
+- [Embedded offers](https://docs.parafin.com/present-offers/embedded)
+- [Business states](https://docs.parafin.com/products/capital/business-experience#business-states)
+- [Create sandbox Capital Product Offer](https://docs.parafin.com/api-reference/capital-product-offers/create-capital-product-offer-sandbox)
+- [Fund sandbox Capital Product](https://docs.parafin.com/api-reference/sandbox/fund-capital-product)
